@@ -339,18 +339,23 @@ Model data is packaged in the library. To update:
 ### Pull Latest Data
 
 ```bash
-# Fetch from models.dev and regenerate snapshot
+# Fetch from models.dev and cache locally
 mix llm_models.pull
 
 # Fetch from custom URL
 mix llm_models.pull --url https://custom.source/api.json
 ```
 
-This downloads upstream data from models.dev (or custom URL), transforms it, validates it, merges with your config overrides, and writes:
+This downloads upstream data and caches it to `priv/llm_models/upstream/` with HTTP metadata.
 
-- `priv/llm_models/upstream.json` - Raw upstream data
-- `priv/llm_models/snapshot.json` - Processed snapshot
-- `lib/llm_models/generated/valid_providers.ex` - Generated provider atoms module
+### Build Snapshot
+
+```bash
+# Run ETL pipeline to generate snapshot.json
+mix llm_models.build
+```
+
+This processes configured sources through the ETL pipeline and writes `priv/llm_models/snapshot.json`.
 
 ### Reload in Development
 
@@ -360,6 +365,23 @@ LLMModels.reload()
 ```
 
 This re-reads the snapshot.json file and updates the `:persistent_term` storage.
+
+## Release Process
+
+This library uses date-based versioning and `git_ops` for changelog management:
+
+```bash
+# 1. Update version to current date (YYYY.MM.DD format)
+mix llm_models.version
+
+# 2. Generate changelog and create git tag
+mix git_ops.release
+
+# 3. Push to GitHub (triggers CI to publish to Hex)
+git push && git push --tags
+```
+
+The GitHub Actions workflow automatically publishes to Hex.pm when a version tag is pushed.
 
 ## Architecture
 
@@ -459,7 +481,9 @@ See [OVERVIEW.md](OVERVIEW.md) for detailed source documentation and examples.
 
 ### Mix Tasks
 
-- `mix llm_models.pull` - Fetch latest data from models.dev and regenerate snapshot
+- `mix llm_models.pull` - Fetch latest data from models.dev and cache locally
+- `mix llm_models.build` - Run ETL pipeline to generate snapshot.json
+- `mix llm_models.version` - Update version to current date
 
 ## Design Principles
 
