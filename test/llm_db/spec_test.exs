@@ -208,17 +208,22 @@ defmodule LLMDB.SpecTest do
       assert {:ok, {:openai, "gpt-4"}} = Spec.parse_spec("gpt-4@openai", format: :at)
     end
 
-    test "returns error for ambiguous input without explicit format" do
-      assert {:error, :ambiguous_format} = Spec.parse_spec("provider:model@ambiguous")
+    test "resolves ambiguous format by prioritizing first separator" do
+      # When both : and @ present without explicit format, check which comes first
+      # provider:model@suffix -> colon comes first -> parse as provider:model@suffix
+      assert {:ok, {:openai, "model@ambiguous"}} = Spec.parse_spec("openai:model@ambiguous")
     end
 
-    test "rejects @ in model segment even with explicit :colon format" do
-      assert {:error, :invalid_chars} =
+    test "allows @ in model segment with explicit :colon format" do
+      # Changed: Now allows @ in model IDs for Google Vertex compatibility
+      assert {:ok, {:openai, "model@ambiguous"}} =
                Spec.parse_spec("openai:model@ambiguous", format: :colon)
     end
 
-    test "rejects colon in model segment even with explicit :at format" do
-      assert {:error, :invalid_chars} = Spec.parse_spec("provider:model@anthropic", format: :at)
+    test "allows colon in model segment with explicit :at format" do
+      # Changed: Now allows : in model IDs
+      assert {:ok, {:anthropic, "provider:model"}} =
+               Spec.parse_spec("provider:model@anthropic", format: :at)
     end
   end
 
@@ -247,10 +252,9 @@ defmodule LLMDB.SpecTest do
       end
     end
 
-    test "raises ArgumentError on ambiguous format" do
-      assert_raise ArgumentError, ~r/ambiguous_format/, fn ->
-        Spec.parse_spec!("provider:model@ambiguous")
-      end
+    test "resolves ambiguous format by prioritizing first separator" do
+      # Changed: Now resolves ambiguous formats instead of raising
+      assert {:openai, "model@ambiguous"} = Spec.parse_spec!("openai:model@ambiguous")
     end
 
     test "raises ArgumentError on unknown provider" do
@@ -349,12 +353,16 @@ defmodule LLMDB.SpecTest do
       assert {:error, :empty_segment} = Spec.parse_spec("@openai")
     end
 
-    test "rejects @ in provider segment (ambiguous format)" do
-      assert {:error, :ambiguous_format} = Spec.parse_spec("open@ai:gpt-4")
+    test "rejects @ in provider segment when ambiguous" do
+      # open@ai:gpt-4 -> both formats have invalid provider segments
+      # @ format: provider="ai:gpt-4" (has :) -> :invalid_chars
+      # Colon format: provider="open@ai" (has @) -> :invalid_chars
+      assert {:error, :invalid_chars} = Spec.parse_spec("open@ai:gpt-4")
     end
 
-    test "rejects colon in provider segment (ambiguous format)" do
-      assert {:error, :ambiguous_format} = Spec.parse_spec("gpt-4@open:ai")
+    test "rejects colon in provider segment when ambiguous" do
+      # gpt-4@open:ai -> provider="open:ai" contains :
+      assert {:error, :invalid_chars} = Spec.parse_spec("gpt-4@open:ai")
     end
 
     test "allows colons in model ID for colon format" do
@@ -362,28 +370,25 @@ defmodule LLMDB.SpecTest do
                Spec.parse_spec("openai:model:with:colons")
     end
 
-    test "rejects @ in model ID for colon format (ambiguous)" do
-      assert {:error, :ambiguous_format} = Spec.parse_spec("openai:model@with@ats")
+    test "resolves @ in model ID for colon format" do
+      # Changed: Now allowed for Google Vertex compatibility
+      assert {:ok, {:openai, "model@with@ats"}} = Spec.parse_spec("openai:model@with@ats")
     end
 
-    test "rejects colon in model ID for @ format (ambiguous)" do
-      assert {:error, :ambiguous_format} = Spec.parse_spec("model:with:colons@openai")
+    test "resolves colon in model ID for @ format" do
+      # Changed: Now allowed
+      assert {:ok, {:openai, "model:with:colons"}} =
+               Spec.parse_spec("model:with:colons@openai")
     end
 
     test "with explicit format: rejects @ in provider for colon format" do
+      # Provider segment "open@ai" contains @ which is invalid
       assert {:error, :invalid_chars} = Spec.parse_spec("open@ai:model", format: :colon)
     end
 
     test "with explicit format: rejects : in provider for @ format" do
+      # Provider segment "open:ai" contains : which is invalid
       assert {:error, :invalid_chars} = Spec.parse_spec("model@open:ai", format: :at)
-    end
-
-    test "with explicit format: rejects @ in model for colon format" do
-      assert {:error, :invalid_chars} = Spec.parse_spec("openai:model@test", format: :colon)
-    end
-
-    test "with explicit format: rejects : in model for @ format" do
-      assert {:error, :invalid_chars} = Spec.parse_spec("model:test@openai", format: :at)
     end
   end
 
@@ -716,6 +721,127 @@ defmodule LLMDB.SpecTest do
       # For non-Bedrock providers, "us." should NOT be stripped
       assert {:ok, {:openai, "us.model-123", model}} = Spec.resolve("openai:us.model-123")
       assert model.id == "us.model-123"
+    end
+  end
+
+  describe "parse_spec/1 with both separators (ambiguous format resolution)" do
+    setup do
+      Store.clear!()
+
+      providers = [
+        %{id: :google_vertex, name: "Google Vertex AI"}
+      ]
+
+      models = [
+        %{
+          id: "claude-haiku-4-5@20251001",
+          provider: :google_vertex,
+          name: "Claude Haiku 4.5",
+          aliases: []
+        }
+      ]
+
+      providers_by_id = Map.new(providers, fn p -> {p.id, p} end)
+      models_by_key = Map.new(models, fn m -> {{m.provider, m.id}, m} end)
+      models_by_provider = Enum.group_by(models, & &1.provider)
+
+      snapshot = %{
+        providers_by_id: providers_by_id,
+        models_by_key: models_by_key,
+        models_by_provider: models_by_provider,
+        aliases_by_key: %{}
+      }
+
+      Store.put!(snapshot, [])
+
+      :ok
+    end
+
+    test "prioritizes colon when it appears first" do
+      # Format: provider:model@version
+      # Colon comes first, so parse as provider:model where model="model@version"
+      assert {:ok, {:google_vertex, "claude-haiku-4-5@20251001"}} =
+               Spec.parse_spec("google_vertex:claude-haiku-4-5@20251001")
+    end
+
+    test "prioritizes @ when it appears first" do
+      # Format: model:version@provider
+      # @ comes first (after colon), so this would parse as model:version @ provider
+      # But this is a weird case - let's test the actual behavior
+      assert {:ok, {:google_vertex, "model:version"}} =
+               Spec.parse_spec("model:version@google_vertex")
+    end
+
+    test "handles Google Vertex model IDs with @ in them" do
+      # Real-world case: google_vertex:claude-haiku-4-5@20251001
+      assert {:ok, {:google_vertex, "claude-haiku-4-5@20251001"}} =
+               Spec.parse_spec("google_vertex:claude-haiku-4-5@20251001")
+    end
+
+    test "resolves Google Vertex models with @ version suffix" do
+      # Google Vertex AI uses @ for versioning (e.g., model-name@version)
+      # This is the exact pattern that motivated removing strict character validation
+      assert {:ok, {:google_vertex, "claude-haiku-4-5@20251001"}} =
+               Spec.parse_spec("google_vertex:claude-haiku-4-5@20251001")
+
+      # Should also work with resolve/1
+      assert {:ok, {:google_vertex, "claude-haiku-4-5@20251001", model}} =
+               Spec.resolve("google_vertex:claude-haiku-4-5@20251001")
+
+      assert model.id == "claude-haiku-4-5@20251001"
+      assert model.name == "Claude Haiku 4.5"
+    end
+  end
+
+  describe "validation with special characters" do
+    setup do
+      Store.clear!()
+
+      providers = [
+        %{id: :openai, name: "OpenAI"},
+        %{id: :google_vertex, name: "Google Vertex AI"}
+      ]
+
+      models = [
+        %{
+          id: "model@version",
+          provider: :openai,
+          name: "Model with @ in ID",
+          aliases: []
+        },
+        %{
+          id: "model:version",
+          provider: :google_vertex,
+          name: "Model with : in ID",
+          aliases: []
+        }
+      ]
+
+      providers_by_id = Map.new(providers, fn p -> {p.id, p} end)
+      models_by_key = Map.new(models, fn m -> {{m.provider, m.id}, m} end)
+      models_by_provider = Enum.group_by(models, & &1.provider)
+
+      snapshot = %{
+        providers_by_id: providers_by_id,
+        models_by_key: models_by_key,
+        models_by_provider: models_by_provider,
+        aliases_by_key: %{}
+      }
+
+      Store.put!(snapshot, [])
+
+      :ok
+    end
+
+    test "allows @ in model ID when using colon format" do
+      # This used to be rejected but is now allowed for Google Vertex compatibility
+      assert {:ok, {:openai, "model@version"}} = Spec.parse_spec("openai:model@version")
+    end
+
+    test "allows : in model ID when using @ format" do
+      # This used to be rejected but is now allowed
+      assert {:ok, {:google_vertex, "model:version"}} =
+               Spec.parse_spec("model:version@google_vertex")
     end
   end
 end

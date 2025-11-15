@@ -138,7 +138,24 @@ defmodule LLMDB.Spec do
 
     case {has_colon, has_at, Keyword.get(opts, :format)} do
       {true, true, nil} ->
-        {:error, :ambiguous_format}
+        # When both separators present, try to determine format based on provider validity
+        # Try @ format first (model@provider), check if potential provider is valid
+        case String.split(spec, "@", parts: 2) do
+          [_model_part, provider_part] ->
+            # Check if the part after @ could be a valid provider
+            case parse_provider(provider_part) do
+              {:ok, _} ->
+                # @ format works, use it
+                parse_at_format(spec)
+
+              {:error, _} ->
+                # @ format doesn't work, try colon format
+                parse_colon_format(spec)
+            end
+
+          _ ->
+            parse_colon_format(spec)
+        end
 
       {true, true, :colon} ->
         parse_colon_format(spec)
@@ -331,18 +348,12 @@ defmodule LLMDB.Spec do
     end
   end
 
-  defp validate_model_segment(segment, format) do
+  defp validate_model_segment(segment, _format) do
     trimmed = String.trim(segment)
 
     cond do
       trimmed == "" ->
         {:error, :empty_segment}
-
-      format == :colon && String.contains?(segment, "@") ->
-        {:error, :invalid_chars}
-
-      format == :at && String.contains?(segment, ":") ->
-        {:error, :invalid_chars}
 
       true ->
         {:ok, segment}
