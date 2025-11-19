@@ -1,7 +1,7 @@
 defmodule LLMDB.MixProject do
   use Mix.Project
 
-  @version "2025.11.14-preview"
+  @version "2025.11.18-preview"
   @source_url "https://github.com/agentjido/llm_db"
   @description "LLM model metadata catalog with fast, capability-aware lookups."
 
@@ -63,7 +63,7 @@ defmodule LLMDB.MixProject do
       {:toml, "~> 0.7"},
       {:req, "~> 0.5"},
       {:deep_merge, "~> 1.0"},
-      {:dotenvy, "~> 0.8"},
+      {:dotenvy, "~> 1.1"},
       {:plug, "~> 1.16", only: :test},
       {:meck, "~> 1.0", only: :test},
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},
@@ -85,7 +85,7 @@ defmodule LLMDB.MixProject do
         "Agent Jido" => "https://agentjido.xyz"
       },
       files:
-        ~w(config lib priv/llm_db/snapshot.json mix.exs LICENSE README.md CHANGELOG.md AGENTS.md usage-rules.md .formatter.exs)
+        ~w(config lib priv mix.exs LICENSE README.md CHANGELOG.md AGENTS.md usage-rules.md .formatter.exs)
     ]
   end
 
