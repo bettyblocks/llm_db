@@ -64,3 +64,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Cleaned up code quality issues
+- Fixed application startup crash (`ArgumentError: not an already existing atom`) caused by race condition between build task and snapshot loading
+- Fixed flaky tests in `LLMDB.EngineOverrideTest` by ensuring test isolation from global config
