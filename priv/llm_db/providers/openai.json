@@ -996,7 +996,8 @@
       "extra": {
         "created": 1762800353,
         "owned_by": "system",
-        "api": "responses"
+        "api": "responses",
+        "structured_output": true
       },
       "family": null,
       "id": "gpt-5.1-2025-11-13",
