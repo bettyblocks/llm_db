@@ -990,7 +990,28 @@
     },
     "gpt-5.1-2025-11-13": {
       "aliases": [],
-      "capabilities": null,
+      "capabilities": {
+        "chat": true,
+        "embeddings": false,
+        "json": {
+          "native": false,
+          "schema": true,
+          "strict": false
+        },
+        "reasoning": {
+          "enabled": false
+        },
+        "streaming": {
+          "text": true,
+          "tool_calls": false
+        },
+        "tools": {
+          "enabled": false,
+          "parallel": false,
+          "streaming": false,
+          "strict": false
+        }
+      },
       "cost": null,
       "deprecated": false,
       "extra": {
